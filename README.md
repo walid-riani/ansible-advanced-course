@@ -1,3 +1,3 @@
-training kodekloud
+Training KodeKloud
 =======
 # Ansible Advanced Course
