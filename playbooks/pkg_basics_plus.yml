@@ -1,0 +1,48 @@
+# playbooks/pkg_basics_plus.yml
+- name: Package basics PLUS (install/update + verify)
+  hosts: ubuntu-server-lab
+  become: true
+
+  vars:
+    pkg_present:
+      - htop
+      - tree
+    pkg_latest:
+      - curl
+    # -> Lijst met pakketten die je wilt verifiëren
+    verify_pkgs: [htop, tree, curl]
+
+  tasks:
+    - name: Update apt cache (Ubuntu/Debian only)
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+    - name: Ensure packages are installed (present)
+      ansible.builtin.package:
+        name: "{{ pkg_present }}"
+        state: present
+
+    - name: Ensure packages are updated to latest
+      ansible.builtin.package:
+        name: "{{ pkg_latest }}"
+        state: latest
+
+    - name: Gather package facts for verification
+      ansible.builtin.package_facts:
+        manager: auto
+
+    # --- Verificatie via lijst + loop ---
+    - name: Print versions (compact, via loop)
+      ansible.builtin.debug:
+        msg: "{{ item }}: {{ (ansible_facts.packages[item] | default([{}]))[0].version | default('not installed') }}"
+      loop: "{{ verify_pkgs }}"
+
+    # (Optioneel) Laat de play falen als een vereist pakket niet geïnstalleerd is
+    # - name: Assert required packages are installed
+    #   ansible.builtin.assert:
+    #     that:
+    #       - "(ansible_facts.packages[item] | default([])) | length > 0"
+    #     fail_msg: "Package {{ item }} is not installed"
+    #   loop: "{{ verify_pkgs }}"

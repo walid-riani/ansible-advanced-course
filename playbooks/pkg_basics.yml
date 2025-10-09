@@ -1,0 +1,28 @@
+# playbooks/pkg_basics.yml
+- name: Package basics lab (Ubuntu node)
+  hosts: ubuntu-server-lab
+  become: true
+
+  vars:
+    pkg_present:    # pakketten die gewoon aanwezig moeten zijn
+      - htop
+      - tree
+    pkg_latest:     # pakketten die altijd naar de nieuwste versie moeten
+      - curl
+
+  tasks:
+    - name: Update apt cache (Ubuntu/Debian only)
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+    - name: Ensure packages are installed (present)
+      ansible.builtin.package:
+        name: "{{ pkg_present }}"
+        state: present
+
+    - name: Ensure packages are updated to latest
+      ansible.builtin.package:
+        name: "{{ pkg_latest }}"
+        state: latest
