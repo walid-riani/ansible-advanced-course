@@ -2,4 +2,4 @@
 localhost ansible_connection=local
 
 [hosts]
-192.168.2.9 ansible_user=walid ansible_ssh_private_key_file=~/.ssh/id.rsa
+ubuntu-server-lab ansible_host=192.168.2.9 ansible_user=walid
