@@ -1,0 +1,97 @@
+# playbooks/apache_8080.yml
+- name: Run Apache on 8080 alongside nginx on 80 (Ubuntu/Debian)
+  hosts: ubuntu-server-lab
+  become: true
+  vars:
+    apache_port: 8080
+    apache_site: ansible-8080.conf
+    apache_docroot: /var/www/html
+
+  handlers:
+    - name: restart apache
+      ansible.builtin.systemd:
+        name: apache2
+        state: restarted
+        enabled: true
+
+  tasks:
+    - name: Ensure apache2 installed
+      ansible.builtin.apt:
+        name: apache2
+        state: present
+        update_cache: true
+
+    # 1) Poortenfile netjes maken: GEEN 'Listen 80' (conflict met nginx) en WEL 'Listen 8080'
+    - name: Remove any 'Listen 80' lines from ports.conf
+      ansible.builtin.lineinfile:
+        path: /etc/apache2/ports.conf
+        regexp: '^Listen\s+80(\b|$)'
+        state: absent
+      notify: restart apache
+
+    - name: Ensure ports.conf contains 'Listen {{ apache_port }}'
+      ansible.builtin.lineinfile:
+        path: /etc/apache2/ports.conf
+        regexp: '^Listen\s+{{ apache_port }}(\b|$)'
+        line: 'Listen {{ apache_port }}'
+        state: present
+        create: yes
+      notify: restart apache
+
+    # 2) Eigen vhost op 8080
+    - name: Create vhost for {{ apache_port }}
+      ansible.builtin.copy:
+        dest: "/etc/apache2/sites-available/{{ apache_site }}"
+        mode: '0644'
+        content: |
+          <VirtualHost *:{{ apache_port }}>
+              ServerName localhost
+              DocumentRoot {{ apache_docroot }}
+
+              <Directory "{{ apache_docroot }}">
+                  Options Indexes FollowSymLinks
+                  AllowOverride None
+                  Require all granted
+              </Directory>
+
+              ErrorLog ${APACHE_LOG_DIR}/{{ apache_site | regex_replace('\.conf$','') }}-error.log
+              CustomLog ${APACHE_LOG_DIR}/{{ apache_site | regex_replace('\.conf$','') }}-access.log combined
+          </VirtualHost>
+      notify: restart apache
+
+    # 3) Disable default :80 site (voorkom referenties naar :80)
+    - name: Disable default 000-default site if present
+      ansible.builtin.file:
+        path: /etc/apache2/sites-enabled/000-default.conf
+        state: absent
+      notify: restart apache
+
+    # 4) Enable onze 8080-site via symlink (idempotent)
+    - name: Enable {{ apache_site }} (sites-enabled symlink)
+      ansible.builtin.file:
+        src: "/etc/apache2/sites-available/{{ apache_site }}"
+        dest: "/etc/apache2/sites-enabled/{{ apache_site }}"
+        state: link
+      notify: restart apache
+
+    # 5) (Optioneel) ServerName warning wegwerken
+    - name: Ensure ServerName is set to localhost
+      ansible.builtin.lineinfile:
+        path: /etc/apache2/apache2.conf
+        insertafter: EOF
+        line: 'ServerName localhost'
+      notify: restart apache
+
+    # 6) Configtest (faal hard bij fouten)
+    - name: Apache configtest
+      ansible.builtin.command: apache2ctl configtest
+      register: apache_cfgtest
+      changed_when: false
+      failed_when: apache_cfgtest.rc != 0
+
+    # 7) Start & enable Apache
+    - name: Ensure apache2 running & enabled
+      ansible.builtin.systemd:
+        name: apache2
+        state: started
+        enabled: true

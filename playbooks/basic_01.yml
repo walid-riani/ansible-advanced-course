@@ -1,0 +1,66 @@
+# playbooks/basic_01.yml
+- name: Basic modules lab (Ubuntu target)
+  hosts: ubuntu-server-lab
+  become: true
+
+# Ubuntu's Apache pakketnaam
+  vars:
+    web_pkg: apache2          
+    demo_dir: /opt/demo
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install packages (apache + nmap)
+      ansible.builtin.package:
+        name:
+          - "{{ web_pkg }}"
+          - nmap
+        state: present
+
+    - name: Ensure web service enabled and started
+      ansible.builtin.service:
+        name: "{{ web_pkg }}"
+        state: started
+        enabled: true
+
+    - name: Create a demo system user
+      ansible.builtin.user:
+        name: deploy
+        shell: /bin/bash
+        state: present
+        create_home: true
+
+    - name: Create demo directory
+      ansible.builtin.file:
+        path: "{{ demo_dir }}"
+        state: directory
+        owner: deploy
+        group: deploy
+        mode: "0755"
+
+    - name: Drop a demo file
+      ansible.builtin.copy:
+        dest: "{{ demo_dir }}/README.txt"
+        content: "Managed by Ansible on {{ inventory_hostname }}\n"
+        owner: deploy
+        group: deploy
+        mode: "0644"
+
+    - name: Add MOTD line
+      ansible.builtin.lineinfile:
+        path: /etc/motd
+        line: "This system is managed by Ansible ({{ inventory_hostname }})"
+        create: yes
+
+    - name: Nightly cron example (backup /opt/demo)
+      ansible.builtin.cron:
+        name: "Demo backup"
+        user: root
+        minute: "0"
+        hour: "2"
+        # In crontab moet % ge-escaped worden als \% en dan krijg je in yaml \\%F
+        job: "tar czf /root/demo-$(date +\\%F).tgz {{ demo_dir }}"

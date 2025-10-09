@@ -1,0 +1,73 @@
+# playbooks/apache_8080_verify_deploy.yml
+- name: Apache 8080 — deploy custom index & verify
+  hosts: ubuntu-server-lab
+  become: true
+
+  vars:
+    apache_port: 8080
+    apache_docroot: /var/www/html
+    apache_owner: www-data
+    apache_group: www-data
+    index_content: |
+      <h1>Hello from Ansible on Apache {{ apache_port }}</h1>
+      <p>Deployed at {{ ansible_date_time.iso8601 }}</p>
+
+    # Zet op true om óók vanaf je controller extern te testen (vereist bereikbare IP/poort)
+    verify_external: false
+
+  tasks:
+    - name: Collect running services
+      ansible.builtin.service_facts:
+
+    - name: Assert apache2 service exists
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services is defined
+          - "'apache2.service' in ansible_facts.services"
+        fail_msg: "apache2.service ontbreekt. Run eerst je configuratie-play (apache_8080.yml)."
+
+    - name: Wait until Apache listens on {{ apache_port }}
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ apache_port }}"
+        state: started
+        timeout: 30
+
+    - name: Deploy custom index.html
+      ansible.builtin.copy:
+        dest: "{{ apache_docroot }}/index.html"
+        content: "{{ index_content }}"
+        owner: "{{ apache_owner }}"
+        group: "{{ apache_group }}"
+        mode: '0644'
+
+    - name: Verify (local) — GET /
+      ansible.builtin.uri:
+        url: "http://localhost:{{ apache_port }}/"
+        return_content: true
+        status_code: 200
+      register: http_local
+      retries: 5
+      delay: 2
+      until: http_local.status == 200
+
+    - name: Show first 120 chars of response
+      ansible.builtin.debug:
+        msg: "{{ http_local.content[:120] }}"
+
+    # ------- Optioneel: externe check vanaf de controller -------
+    - name: Determine target IP for external check
+      ansible.builtin.set_fact:
+        target_ip: "{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}"
+      when: verify_external | bool
+
+    - name: Verify (external, from controller)
+      ansible.builtin.uri:
+        url: "http://{{ target_ip }}:{{ apache_port }}/"
+        status_code: 200
+      delegate_to: localhost
+      register: http_ext
+      retries: 3
+      delay: 2
+      until: http_ext.status == 200
+      when: verify_external | bool
