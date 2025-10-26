@@ -14,6 +14,8 @@ Het is opgezet als een real-world DevOps repository met playbooks, roles en docu
 
 ---
 
+| 🧱 **Blockinfile** | Insert a web banner block in `/var/www/html/index.html` using Ansible’s blockinfile | [docs/blockinfile.md](docs/blockinfile.md) |
+
 ## 📚 Documentatie
 
 - 🔥 **Firewall** – [docs/firewall.md](docs/firewall.md)  
