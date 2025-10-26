@@ -1,0 +1,44 @@
+---
+- name: Switch httpd to custom port (8080) safely
+  hosts: web1
+  become: true
+  vars:
+    httpd_port: 8080
+    httpd_conf: /etc/httpd/conf/httpd.conf
+
+  tasks:
+    - name: Ensure httpd is installed
+      ansible.builtin.package:
+        name: httpd
+        state: present
+
+    - name: Allow httpd to bind {{ httpd_port }} in SELinux (if enforcing)
+      ansible.posix.seport:
+        ports: "{{ httpd_port }}"
+        proto: tcp
+        setype: http_port_t
+        state: present
+      when:
+        - ansible_facts.selinux is defined
+        - ansible_facts.selinux.status == "enabled"
+        - ansible_facts.selinux.mode == "enforcing"
+
+    - name: Change 'Listen 80' to 'Listen {{ httpd_port }}' in httpd.conf
+      ansible.builtin.replace:
+        path: "{{ httpd_conf }}"
+        regexp: '^(\s*Listen)\s+80\b'
+        replace: '\1 {{ httpd_port }}'
+        backup: true
+      notify: Restart httpd
+
+    - name: Ensure httpd is enabled and running
+      ansible.builtin.service:
+        name: httpd
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Restart httpd
+      ansible.builtin.service:
+        name: httpd
+        state: restarted
