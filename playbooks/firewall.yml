@@ -1,0 +1,34 @@
+---
+- name: Configure firewall rules using ansible.posix.firewalld
+  hosts: ubuntu-server-lab
+  become: true
+  collections:
+    - ansible.posix
+
+  tasks:
+    - name: Ensure firewalld is installed
+      ansible.builtin.package:
+        name: firewalld
+        state: present
+
+    - name: Ensure firewalld service is running and enabled
+      ansible.builtin.service:
+        name: firewalld
+        state: started
+        enabled: true
+
+    - name: Allow HTTPS service in the internal zone
+      ansible.posix.firewalld:
+        service: https
+        zone: internal
+        permanent: true
+        immediate: true
+        state: enabled
+
+    - name: Allow Ansible controller IP
+      ansible.posix.firewalld:
+        source: 192.168.56.14
+        zone: internal
+        permanent: true
+        immediate: true
+        state: enabled

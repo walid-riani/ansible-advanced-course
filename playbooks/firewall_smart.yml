@@ -1,0 +1,95 @@
+---
+- name: Smart firewall config (auto-detect active zone)
+  hosts: ubuntu-server-lab
+  become: true
+  collections: [ansible.posix, ansible.builtin]
+
+  vars:
+    controller_ip: 192.168.56.14     # Alma controller
+    iface: enp0s3                    # host-only interface op Ubuntu
+
+  pre_tasks:
+    - name: Update apt cache on Debian/Ubuntu
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Disable UFW if active (avoid conflicts)
+      command: ufw disable
+      changed_when: "'already disabled' not in (ufw_disable.stderr|default(''))"
+      failed_when: false
+      register: ufw_disable
+
+  tasks:
+    # Install firewalld cross-distro
+    - name: Ensure firewalld is installed (Debian/Ubuntu)
+      apt:
+        name: firewalld
+        state: present
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Ensure firewalld is installed (RHEL/Alma/Rocky)
+      dnf:
+        name: firewalld
+        state: present
+      when: ansible_facts['os_family'] == 'RedHat'
+
+    - name: Ensure firewalld is running and enabled
+      service:
+        name: firewalld
+        state: started
+        enabled: true
+
+    # --- Detect zone ---
+    - name: Get zone of interface (if any)
+      command: firewall-cmd --get-zone-of-interface={{ iface }}
+      register: zone_of_iface
+      changed_when: false
+      failed_when: false
+
+    - name: Get default zone (fallback)
+      command: firewall-cmd --get-default-zone
+      register: default_zone
+      changed_when: false
+
+    - name: Decide active zone to use
+      set_fact:
+        active_zone: >-
+          {{ (zone_of_iface.stdout | trim)
+             if (zone_of_iface.rc == 0 and (zone_of_iface.stdout | trim) not in ["", "no zone"])
+             else (default_zone.stdout | trim) }}
+
+    - name: Bind interface to chosen zone (idempotent)
+      ansible.posix.firewalld:
+        zone: "{{ active_zone }}"
+        interface: "{{ iface }}"
+        state: enabled
+        permanent: true
+        immediate: true
+
+    # --- Rules in detected zone ---
+    - name: Allow controller source in {{ active_zone }}
+      ansible.posix.firewalld:
+        zone: "{{ active_zone }}"
+        source: "{{ controller_ip }}"
+        state: enabled
+        permanent: true
+        immediate: true
+
+    - name: Allow HTTPS service in {{ active_zone }}
+      ansible.posix.firewalld:
+        zone: "{{ active_zone }}"
+        service: https
+        state: enabled
+        permanent: true
+        immediate: true
+
+    # --- Verify (nice for logs/CI) ---
+    - name: Show final zone state
+      command: firewall-cmd --zone={{ active_zone }} --list-all
+      register: zstate
+      changed_when: false
+
+    - debug:
+        msg: "{{ zstate.stdout }}"

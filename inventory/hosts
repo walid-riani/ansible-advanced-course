@@ -2,4 +2,4 @@
 localhost ansible_connection=local
 
 [hosts]
-ubuntu-server-lab ansible_host=192.168.2.9 ansible_user=walid
+ubuntu-server-lab ansible_host=192.168.56.15 ansible_user=walid
