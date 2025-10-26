@@ -14,5 +14,23 @@ Het is opgezet als een real-world DevOps repository met playbooks, roles en docu
 
 ---
 
-🧩 *Stack:* Ansible · Linux · YAML · Git · VirtualBox homelab  
-🧑‍💻 Auteur: Walid Riani
+## 📚 Documentatie
+
+- 🔥 **Firewall** – [docs/firewall.md](docs/firewall.md)  
+- 📁 **Filecontent (Find + Synchronize)** – [docs/filecontent.md](docs/filecontent.md)
+
+## ▶️ Snel starten
+
+```bash
+# alle playbooks draaien met eigen inventory/config
+ansible-playbook playbooks/find_sync.yml -l web1
+
+---
+
+*(Let op: bij GitHub markdown geen lege codefence in codefence—bovenstaand blok in één keer kopiëren.)*
+
+## 3) Commit & push README
+```bash
+git add README.md
+git commit -m "docs: link Filecontent docs in README and add quickstart"
+git push origin main
