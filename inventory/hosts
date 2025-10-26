@@ -1,5 +1,5 @@
 [local]
-localhost ansible_connection=local
+localhost ansible_connection=local ansible_become=true ansible_become_method=sudo
 
 [hosts]
 ubuntu-server-lab ansible_host=192.168.56.15 ansible_user=walid

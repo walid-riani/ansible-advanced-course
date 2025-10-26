@@ -1,0 +1,107 @@
+---
+# File: playbooks/mariadb_seed.yml
+# Goal: Install & configure MariaDB on Alma/RHEL, firewall openen,
+#       app-DB + user aanmaken, en seed-data importeren.
+
+- name: MariaDB | install, configure, seed
+  hosts: local
+  become: true
+  gather_facts: true
+
+  vars:
+    mysql_port: 3306
+    mariadb_service: mariadb
+    py_mysql_pkg: python3-PyMySQL
+    dbname: "ecomdb"            # override in group_vars/db_servers.yml
+    dbuser: "ecomuser"          # idem
+    dbpassword: "ChangeMe!"     # gebruik Vault in echte omgeving
+    web_host: "172.20.1.100"    # app/web host die mag inloggen
+    seed_sql_src: "{{ playbook_dir }}/../files/db-load-script.sql"
+    seed_sql_dest: "/tmp/db-load-script.sql"
+
+  pre_tasks:
+    - name: Assert OS is RedHat family
+      ansible.builtin.assert:
+        that: ansible_os_family == "RedHat"
+        fail_msg: "Deze play is bedoeld voor Alma/RHEL."
+      tags: [always]
+
+    - name: Ensure packages present (MariaDB, PyMySQL driver, firewalld)
+      ansible.builtin.package:
+        name:
+          - mariadb-server
+          - "{{ py_mysql_pkg }}"
+          - firewalld
+        state: present
+      tags: [packages, db]
+
+  tasks:
+    - name: Ensure MariaDB running & enabled
+      ansible.builtin.service:
+        name: "{{ mariadb_service }}"
+        state: started
+        enabled: true
+      tags: [service, db]
+
+    - name: Ensure firewalld running & enabled
+      ansible.builtin.service:
+        name: firewalld
+        state: started
+        enabled: true
+      tags: [firewall]
+
+    - name: Open MySQL port {{ mysql_port }}/tcp (permanent + immediate)
+      ansible.posix.firewalld:
+        port: "{{ mysql_port }}/tcp"
+        state: enabled
+        permanent: true
+        immediate: true
+      notify: Reload firewalld
+      tags: [firewall]
+
+    # (Optioneel) SELinux: alleen nodig als je custom poorten bindt of remote access wijzigt.
+    # - name: Allow mysqld to connect to the network (if enforcing)
+    #   ansible.posix.seboolean:
+    #     name: mysql_connect_any
+    #     state: true
+    #     persistent: true
+    #   when: ansible_selinux.status == "enabled" and ansible_selinux.mode == "enforcing"
+    #   tags: [selinux]
+
+    - name: Create application database
+      community.mysql.mysql_db:
+        name: "{{ dbname }}"
+        state: present
+        login_unix_socket: /var/lib/mysql/mysql.sock
+      tags: [db, schema]
+
+    - name: Create application DB user (restrict to web host)
+      community.mysql.mysql_user:
+        name: "{{ dbuser }}"
+        password: "{{ dbpassword }}"
+        host: "{{ web_host }}"
+        priv: "{{ dbname }}.*:ALL"
+        state: present
+        login_unix_socket: /var/lib/mysql/mysql.sock
+      tags: [db, users]
+
+    - name: Copy seed SQL to DB host
+      ansible.builtin.copy:
+        src: "{{ seed_sql_src }}"
+        dest: "{{ seed_sql_dest }}"
+        mode: "0644"
+      tags: [db, seed]
+
+    - name: Import seed data into database (idempotent)
+      community.mysql.mysql_db:
+        name: "{{ dbname }}"
+        state: import
+        target: "{{ seed_sql_dest }}"
+        login_unix_socket: /var/lib/mysql/mysql.sock
+      tags: [db, seed]
+
+  handlers:
+    - name: Reload firewalld
+      ansible.builtin.service:
+        name: firewalld
+        state: reloaded

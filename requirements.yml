@@ -1,2 +1,8 @@
 collections:
   - name: ansible.posix
+  - name: community.mysql         # modules: mysql_db, mysql_user, etc.
+    version: "3.8.0"              # (werkt prima met ansible-core 2.14)
+  - name: ansible.posix
+    version: "1.5.4"
+  - name: community.general
+    version: "7.5.0"
