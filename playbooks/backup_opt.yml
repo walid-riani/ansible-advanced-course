@@ -1,0 +1,63 @@
+---
+- name: Backup /opt as tar.gz with retention
+  hosts: ubuntu-server-lab
+  become: true
+  gather_facts: true
+
+  vars:
+    src_dir: /opt
+    backup_dir: /var/backups/opt
+    archive_name: "opt-{{ ansible_date_time.date }}-{{ ansible_date_time.time | regex_replace(':','') }}.tar.gz"
+    keep_days: 14
+    # Gebruik glob patterns -> 'exclusion_patterns' (niet exclude_path)
+    exclude_globs:
+      - "*.tmp"
+      - "**/cache/**"
+      - "**/node_modules/**"
+      - "**/.git/**"
+
+  pre_tasks:
+    - name: Ensure backup directory exists
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+  tasks:
+    - name: Create tar.gz archive from {{ src_dir }}
+      ansible.builtin.archive:
+        path: "{{ src_dir }}"
+        dest: "{{ backup_dir }}/{{ archive_name }}"
+        format: gz
+        exclusion_patterns: "{{ exclude_globs }}"
+
+    - name: Generate checksum for integrity
+      ansible.builtin.command:
+        cmd: "sha256sum {{ backup_dir }}/{{ archive_name }}"
+      register: sha
+      changed_when: false
+
+    - name: Write checksum file (idempotent)
+      ansible.builtin.copy:
+        content: "{{ sha.stdout }}\n"
+        dest: "{{ backup_dir }}/{{ archive_name }}.sha256"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Find old archives older than {{ keep_days }} days
+      ansible.builtin.find:
+        paths: "{{ backup_dir }}"
+        patterns: "opt-*.tar.gz"
+        age: "{{ keep_days }}d"
+      register: old_archives
+
+    - name: Remove old archives
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ old_archives.files }}"
+      loop_control:
+        label: "{{ item.path }}"

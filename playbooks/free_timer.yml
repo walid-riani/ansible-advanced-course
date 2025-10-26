@@ -1,0 +1,87 @@
+---
+# Playbook: free_timer.yml
+# Doel: /root/free.sh elke 2 uur draaien via systemd timer (moderne vervanger van cron)
+
+- name: Schedule /root/free.sh with systemd timer (every 2h)
+  hosts: node00        # of: ubuntu-server-lab / backup_targets / etc.
+  become: true
+  gather_facts: true
+
+  vars:
+    svc_name: "free-memory"
+    script_path: "/root/free.sh"
+    # Timer instellingen: start 5 minuten na boot, daarna elke 2 uur
+    on_boot_sec: "5min"
+    on_unit_active_sec: "2h"
+
+  pre_tasks:
+    - name: Assert script exists
+      ansible.builtin.stat:
+        path: "{{ script_path }}"
+      register: script_stat
+
+    - name: Fail when script is missing
+      ansible.builtin.fail:
+        msg: "Script {{ script_path }} does not exist on target host."
+      when: not script_stat.stat.exists
+
+    - name: Ensure script is executable
+      ansible.builtin.file:
+        path: "{{ script_path }}"
+        mode: "0750"
+
+  tasks:
+    - name: Install systemd service unit
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ svc_name }}.service"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Run free memory check script
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/env sh {{ script_path }}
+          User=root
+
+      notify: Reload systemd
+
+    - name: Install systemd timer unit (every 2h)
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ svc_name }}.timer"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Run {{ svc_name }} every 2 hours
+
+          [Timer]
+          OnBootSec={{ on_boot_sec }}
+          OnUnitActiveSec={{ on_unit_active_sec }}
+          AccuracySec=1min
+          Unit={{ svc_name }}.service
+
+          [Install]
+          WantedBy=timers.target
+
+      notify: Reload systemd
+
+    - name: Enable & start timer
+      ansible.builtin.systemd:
+        name: "{{ svc_name }}.timer"
+        enabled: true
+        state: started
+        daemon_reload: false
+
+    - name: (Optional) Show active timer
+      ansible.builtin.command: "systemctl list-timers '{{ svc_name }}*' --no-pager"
+      register: timers_list
+      changed_when: false
+
+    - name: Print timer summary
+      ansible.builtin.debug:
+        msg: "{{ timers_list.stdout_lines | default([]) }}"
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true

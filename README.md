@@ -14,6 +14,9 @@ Het is opgezet als een real-world DevOps repository met playbooks, roles en docu
 
 ---
 
+| 🌐 **HTTPD Port** | Switch Apache httpd to port 8080 (safe replace + SELinux) | docs/httpd_port.md |
+
+
 | 🧱 **Blockinfile** | Insert a web banner block in `/var/www/html/index.html` using Ansible’s blockinfile | [docs/blockinfile.md](docs/blockinfile.md) |
 
 ## 📚 Documentatie
